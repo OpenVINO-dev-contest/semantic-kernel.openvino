@@ -1,4 +1,4 @@
-import logging
+from logging import Logger
 from threading import Thread
 from typing import Any, Dict, List, Literal, Optional, Union
 
@@ -7,6 +7,7 @@ from transformers import (
     AutoModelForCausalLM,
     AutoModel,
     AutoTokenizer,
+    GenerationConfig,
     AutoConfig,
     TextIteratorStreamer,
     pipeline,
@@ -17,14 +18,12 @@ from optimum.intel.openvino import OVModelForCausalLM
 
 from semantic_kernel.connectors.ai.ai_exception import AIException
 from semantic_kernel.connectors.ai.ai_service_client_base import AIServiceClientBase
-from semantic_kernel.connectors.ai.hugging_face.hf_request_settings import (
-    HuggingFaceRequestSettings,
+from semantic_kernel.connectors.ai.complete_request_settings import (
+    CompleteRequestSettings,
 )
 from semantic_kernel.connectors.ai.text_completion_client_base import (
     TextCompletionClientBase,
 )
-
-logger: logging.Logger = logging.getLogger(__name__)
 
 
 class OpenVINOTextCompletion(TextCompletionClientBase, AIServiceClientBase):
@@ -38,7 +37,8 @@ class OpenVINOTextCompletion(TextCompletionClientBase, AIServiceClientBase):
         task: Optional[str] = "text-generation",
         device: Optional[str] = "CPU",
         log: Optional[Any] = None,
-        model_kwargs: Optional[Dict[str, Any]] = None,
+        ov_config: Optional[Dict[str, Any]] = {
+            "PERFORMANCE_HINT": "LATENCY", "NUM_STREAMS": "1", "CACHE_DIR": ""},
         pipeline_kwargs: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
@@ -66,37 +66,60 @@ class OpenVINOTextCompletion(TextCompletionClientBase, AIServiceClientBase):
         Note that this model will be downloaded from the Hugging Face model hub.
         """
         ov_model = OVModelForCausalLM.from_pretrained(
-                ai_model_id,
-                device=device,
-                ov_config=model_kwargs,
-                config=AutoConfig.from_pretrained(ai_model_id, trust_remote_code=True),
-                trust_remote_code=True,)
+            ai_model_id,
+            device=device,
+            ov_config=ov_config,
+            config=AutoConfig.from_pretrained(
+                ai_model_id, trust_remote_code=True),
+            trust_remote_code=True,)
+        tokenizer = AutoTokenizer.from_pretrained(ai_model_id)
         super().__init__(
+            ai_model_id=ai_model_id,
             task=task,
+            device="cpu",
             generator=pipeline(
                 task=task,
+                tokenizer=tokenizer,
                 model=ov_model,
-                device=device,
                 **pipeline_kwargs or {},
             ),
+            log=log,
         )
-        if log:
-            logger.warning("The `log` parameter is deprecated. Please use the `logging` module instead.")
 
     async def complete_async(
         self,
         prompt: str,
-        request_settings: HuggingFaceRequestSettings,
-        **kwargs,
+        request_settings: CompleteRequestSettings,
+        logger: Optional[Logger] = None,
     ) -> Union[str, List[str]]:
-        if kwargs.get("logger"):
-            logger.warning("The `logger` parameter is deprecated. Please use the `logging` module instead.")
         try:
-            results = self.generator(**request_settings.prepare_settings_dict(prompt))
-            result_field_name = "summary_text" if self.task == "summarization" else "generated_text"
-            if len(results) == 1:
-                return results[0][result_field_name]
-            return [resp[result_field_name] for resp in results]
+            generation_config = GenerationConfig(
+                temperature=request_settings.temperature,
+                top_p=request_settings.top_p,
+                max_new_tokens=request_settings.max_tokens,
+                pad_token_id=50256,  # EOS token
+            )
+
+            results = self.generator(
+                prompt,
+                do_sample=True,
+                num_return_sequences=request_settings.number_of_responses,
+                generation_config=generation_config,
+            )
+
+            completions = list()
+            if self.task == "summarization":
+                for response in results:
+                    completions.append(response["summary_text"])
+                if len(completions) == 1:
+                    return completions[0]
+                return completions
+
+            for response in results:
+                completions.append(response["generated_text"])
+            if len(completions) == 1:
+                return completions[0]
+            return completions
 
         except Exception as e:
             raise AIException("Hugging Face completion failed", e)
@@ -104,8 +127,8 @@ class OpenVINOTextCompletion(TextCompletionClientBase, AIServiceClientBase):
     async def complete_stream_async(
         self,
         prompt: str,
-        request_settings: HuggingFaceRequestSettings,
-        **kwargs,
+        request_settings: CompleteRequestSettings,
+        logger: Optional[Logger] = None,
     ):
         """
         Streams a text completion using a Hugging Face model.
@@ -113,28 +136,33 @@ class OpenVINOTextCompletion(TextCompletionClientBase, AIServiceClientBase):
 
         Arguments:
             prompt {str} -- Prompt to complete.
-            request_settings {HuggingFaceRequestSettings} -- Request settings.
+            request_settings {CompleteRequestSettings} -- Request settings.
 
         Yields:
             str -- Completion result.
         """
-        if kwargs.get("logger"):
-            logger.warning("The `logger` parameter is deprecated. Please use the `logging` module instead.")
-        if request_settings.num_return_sequences > 1:
+        if request_settings.number_of_responses > 1:
             raise AIException(
                 AIException.ErrorCodes.InvalidConfiguration,
                 "HuggingFace TextIteratorStreamer does not stream multiple responses in a parseable format. \
                     If you need multiple responses, please use the complete_async method.",
             )
         try:
+            generation_config = GenerationConfig(
+                temperature=request_settings.temperature,
+                top_p=request_settings.top_p,
+                max_new_tokens=request_settings.max_tokens,
+                pad_token_id=50256,  # EOS token
+            )
+
             tokenizer = AutoTokenizer.from_pretrained(self.ai_model_id)
             streamer = TextIteratorStreamer(tokenizer)
             args = {prompt}
             kwargs = {
-                "num_return_sequences": request_settings.num_return_sequences,
-                "generation_config": request_settings.get_generation_config(),
+                "num_return_sequences": request_settings.number_of_responses,
+                "generation_config": generation_config,
                 "streamer": streamer,
-                "do_sample": request_settings.do_sample,
+                "do_sample": True,
             }
 
             # See https://github.com/huggingface/transformers/blob/main/src/transformers/generation/streamers.py#L159

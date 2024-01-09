@@ -25,15 +25,20 @@ logger: logging.Logger = logging.getLogger(__name__)
 class OpenVINOTextEmbedding(EmbeddingGeneratorBase, AIServiceClientBase):
     model: Any
     tokenizer: Any
+    do_norm: bool
     num_stream: int
 
     def __init__(
         self,
         ai_model_id: str,
-        ov_config: Optional[dict],
-        model_kwargs: Optional[dict],
-        log: Optional[Any] = None,
-
+        do_norm: bool = True,
+        ov_config: Optional[dict] = {
+            "device_name": "CPU",
+            "config": {"PERFORMANCE_HINT": "THROUGHPUT"},
+        },
+        model_kwargs: Optional[dict] = {
+            "model_max_length": 512,
+        },
     ) -> None:
         """
         Initializes a new instance of the HuggingFaceTextEmbedding class.
@@ -53,14 +58,32 @@ class OpenVINOTextEmbedding(EmbeddingGeneratorBase, AIServiceClientBase):
         model_path = Path(ai_model_id) / "openvino_model.xml"
         model = core.compile_model(model_path, **_ov_config)
         num_stream = model.get_property('NUM_STREAMS')
-        if log:
-            logger.warning("The `log` parameter is deprecated. Please use the `logging` module instead.")
         super().__init__(
+            ai_model_id=ai_model_id,
             model=model,
             tokenizer=tokenizer,
+            do_norm=do_norm,
             num_stream=num_stream
         )
-    
+
+    def _text_length(self, text: Union[List[int], List[List[int]]]):
+        """
+        Help function to get the length for the input text. Text can be either
+        a list of ints (which means a single text as input), or a tuple of list of ints
+        (representing several text inputs to the model).
+        """
+
+        if isinstance(text, dict):  # {key: value} case
+            return len(next(iter(text.values())))
+        elif not hasattr(text, '__len__'):  # Object has no len() method
+            return 1
+        # Empty string or list of ints
+        elif len(text) == 0 or isinstance(text[0], int):
+            return len(text)
+        else:
+            # Sum of length of individual strings
+            return sum([len(t) for t in text])
+
     def encode(self, sentences: Union[str, List[str]]):
         """
         Computes sentence embeddings
@@ -86,7 +109,7 @@ class OpenVINOTextEmbedding(EmbeddingGeneratorBase, AIServiceClientBase):
             all_embeddings.extend(embeddings)
 
         infer_queue.set_callback(postprocess)
-        
+
         for i, sentence in enumerate(sentences_sorted):
             inputs = {}
             features = self.tokenizer(
@@ -97,7 +120,6 @@ class OpenVINOTextEmbedding(EmbeddingGeneratorBase, AIServiceClientBase):
         infer_queue.wait_all()
         all_embeddings = np.asarray(all_embeddings)
         return all_embeddings
-
 
     async def generate_embeddings_async(self, texts: List[str]) -> ndarray:
         """

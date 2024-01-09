@@ -14,7 +14,7 @@ if __name__ == "__main__":
     parser.add_argument('-m',
                         '--model_id',
                         required=False,
-                        default='GanymedeNil/text2vec-large-chinese',
+                        default='sentence-transformers/all-mpnet-base-v2',
                         type=str,
                         help='Required. hugging face model id')
     parser.add_argument('-o',
@@ -31,9 +31,8 @@ if __name__ == "__main__":
     tokenizer = AutoTokenizer.from_pretrained(args.model_id)
     model = AutoModel.from_pretrained(args.model_id)
 
-    input_shape = ov.PartialShape([-1, -1])
     dummy_inputs = {"input_ids": torch.ones((1, 10), dtype=torch.long), "attention_mask": torch.ones(
-        (1, 10), dtype=torch.long), "token_type_ids": torch.zeros((1, 10), dtype=torch.long)}
+        (1, 10), dtype=torch.long)}
 
     ov_model = ov.convert_model(model, example_input=dummy_inputs)
     ov.save_model(ov_model, model_path / "openvino_model.xml")
