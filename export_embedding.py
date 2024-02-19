@@ -1,6 +1,5 @@
 from transformers import AutoModel, AutoTokenizer
 import openvino as ov
-import numpy as np
 import torch
 import argparse
 from pathlib import Path

@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING, Any, AsyncIterable, Dict, List, Literal, Optio
 
 from transformers import (
     AutoTokenizer,
-    AutoConfig,
     TextIteratorStreamer,
     pipeline,
 )
@@ -27,7 +26,6 @@ if TYPE_CHECKING:
 logger: logging.Logger = logging.getLogger(__name__)
 
 VALID_TASKS = ("summarization", "text-generation", "text2text-generation")
-
 class OpenVINOTextCompletion(TextCompletionClientBase, AIServiceClientBase):
     task: Literal["summarization", "text-generation", "text2text-generation"]
     device: str
@@ -46,28 +44,24 @@ class OpenVINOTextCompletion(TextCompletionClientBase, AIServiceClientBase):
         Arguments:
             ai_model_id {str} -- Hugging Face model card string, see
                 https://huggingface.co/models
-            device {Optional[int]} -- Device to run the model on, defaults to CPU, 0+ for GPU,
-                                   -- None if using device_map instead. (If both device and device_map
-                                      are specified, device overrides device_map. If unintended,
-                                      it can lead to unexpected behavior.)
             task {Optional[str]} -- Model completion task type, options are:
                 - summarization: takes a long text and returns a shorter summary.
                 - text-generation: takes incomplete text and returns a set of completion candidates.
                 - text2text-generation (default): takes an input prompt and returns a completion.
                 text2text-generation is the default as it behaves more like GPT-3+.
             log  -- Logger instance. (Deprecated)
-            model_kwargs {Optional[Dict[str, Any]]} -- Additional dictionary of keyword arguments
+            model_kwargs {Optional[dict]} -- Additional dictionary of keyword arguments
                 passed along to the model's `from_pretrained(..., **model_kwargs)` function.
-            pipeline_kwargs {Optional[Dict[str, Any]]} -- Additional keyword arguments passed along
+            pipeline_kwargs {Optional[dict]} -- Additional keyword arguments passed along
                 to the specific pipeline init (see the documentation for the corresponding pipeline class
                 for possible values).
 
         Note that this model will be downloaded from the Hugging Face model hub.
         """
-        
+
         _model_kwargs = model_kwargs or {}
         _pipeline_kwargs = pipeline_kwargs or {}
-        
+
         if task == "text-generation":
             ov_model = OVModelForCausalLM.from_pretrained(
                 ai_model_id, **_model_kwargs)
@@ -80,12 +74,12 @@ class OpenVINOTextCompletion(TextCompletionClientBase, AIServiceClientBase):
                 f"currently only {VALID_TASKS} are supported"
             )
         tokenizer = AutoTokenizer.from_pretrained(ai_model_id)
-        
+
         if tokenizer.pad_token is None:
             tokenizer.pad_token_id = ov_model.config.eos_token_id
         if ov_model.generation_config.pad_token_id is None:
             ov_model.generation_config.pad_token_id = ov_model.config.eos_token_id
-            
+
         generator = pipeline(
             task=task,
             tokenizer=tokenizer,
@@ -116,9 +110,11 @@ class OpenVINOTextCompletion(TextCompletionClientBase, AIServiceClientBase):
             List[TextContent] -- A list of TextContent objects representing the response(s) from the LLM.
         """
         if kwargs.get("logger"):
-            logger.warning("The `logger` parameter is deprecated. Please use the `logging` module instead.")
+            logger.warning(
+                "The `logger` parameter is deprecated. Please use the `logging` module instead.")
         try:
-            results = self.generator(prompt, **settings.prepare_settings_dict())
+            results = self.generator(
+                prompt, **settings.prepare_settings_dict())
         except Exception as e:
             raise AIException("Hugging Face completion failed", e)
         if isinstance(results, list):
@@ -129,7 +125,8 @@ class OpenVINOTextCompletion(TextCompletionClientBase, AIServiceClientBase):
         return TextContent(
             inner_content=response,
             ai_model_id=self.ai_model_id,
-            text=candidate["summary_text" if self.task == "summarization" else "generated_text"],
+            text=candidate["summary_text" if self.task ==
+                           "summarization" else "generated_text"],
         )
 
     async def complete_stream(
@@ -150,7 +147,8 @@ class OpenVINOTextCompletion(TextCompletionClientBase, AIServiceClientBase):
             List[StreamingTextContent] -- List of StreamingTextContent objects.
         """
         if kwargs.get("logger"):
-            logger.warning("The `logger` parameter is deprecated. Please use the `logging` module instead.")
+            logger.warning(
+                "The `logger` parameter is deprecated. Please use the `logging` module instead.")
         if settings.num_return_sequences > 1:
             raise AIException(
                 AIException.ErrorCodes.InvalidConfiguration,
@@ -158,7 +156,8 @@ class OpenVINOTextCompletion(TextCompletionClientBase, AIServiceClientBase):
                     If you need multiple responses, please use the complete method.",
             )
         try:
-            streamer = TextIteratorStreamer(AutoTokenizer.from_pretrained(self.ai_model_id))
+            streamer = TextIteratorStreamer(
+                AutoTokenizer.from_pretrained(self.ai_model_id))
             # See https://github.com/huggingface/transformers/blob/main/src/transformers/generation/streamers.py#L159
             thread = Thread(
                 target=self.generator, args={prompt}, kwargs=settings.prepare_settings_dict(streamer=streamer)

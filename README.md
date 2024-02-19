@@ -1,13 +1,12 @@
-# langchain.openvino
-This experimental sample shows how to implement embedding and text generation model with OpenVINO runtime and LangChain.
+# semantic-kernel.openvino
+
+This experimental sample shows how to integrate Semantic-Kernel with OpenVINO
 
 ## Requirements
 
 - Linux, Windows
 - Python >= 3.9.0
 - CPU or GPU compatible with OpenVINO.
-- RAM: >= 16GB
-- vRAM: >= 8GB
 
 ## Install the requirements
 
@@ -22,30 +21,18 @@ This experimental sample shows how to implement embedding and text generation mo
     $ pip install -r requirements.txt
 
 
-## Run LLM sample
+## Export models
 
-Export the LLM IR model from HuggingFace (optional):
+Export the Text-generation IR model from HuggingFace:
 
-    $ python3 model_export/export_llm.py -m "meta-llama/Llama-2-7b-chat-hf"
+    $ optimum-cli export openvino --model gpt2 llm_model
 
-Run text generation sample with local models:
+see more [usage examples](https://github.com/huggingface/optimum-intel?tab=readme-ov-file#export)   
 
-    $ python3 sample.py -m "./ir_model"
+Export the Embedding IR model from HuggingFace:
 
-Run text generation sample with remote models:
+    $ python3 export_embedding.py
 
-    $ python3 sample.py -m "meta-llama/Llama-2-7b-chat-hf"
+## Launch notebook sample
 
-## Run RAG sample
-
-Export the embedding IR model from HuggingFace:
-
-    $ python3 model_export/export_embedding.py
-
-Export the LLM IR model from HuggingFace (optional):
-
-    $ python3 model_export/export_llm.py -m "meta-llama/Llama-2-7b-chat-hf"
-
-Run RAG sample with local models:
-
-    $ python3 rag.py
+    $ jupyter lab sample.ipynb
