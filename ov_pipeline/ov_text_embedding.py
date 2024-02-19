@@ -3,15 +3,13 @@
 import logging
 from typing import Any, List, Optional
 
-import torch
 from numpy import array, ndarray
 
-from typing import Optional, Union, Dict, Tuple, Any, List
+from typing import Optional, Union, Any, List
 from sklearn.preprocessing import normalize
 from transformers import AutoTokenizer
 from pathlib import Path
 import openvino as ov
-import torch
 import numpy as np
 from semantic_kernel.connectors.ai.ai_exception import AIException
 from semantic_kernel.connectors.ai.ai_service_client_base import AIServiceClientBase
@@ -121,7 +119,7 @@ class OpenVINOTextEmbedding(EmbeddingGeneratorBase, AIServiceClientBase):
         all_embeddings = np.asarray(all_embeddings)
         return all_embeddings
 
-    async def generate_embeddings_async(self, texts: List[str]) -> ndarray:
+    async def generate_embeddings(self, texts: List[str]) -> ndarray:
         """
         Generates embeddings for a list of texts.
 
@@ -136,4 +134,4 @@ class OpenVINOTextEmbedding(EmbeddingGeneratorBase, AIServiceClientBase):
             embeddings = self.encode(texts)
             return array(embeddings)
         except Exception as e:
-            raise AIException("Hugging Face embeddings failed", e)
+            raise AIException("OpenVINO embeddings failed", e)

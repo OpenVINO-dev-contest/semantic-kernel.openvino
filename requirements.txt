@@ -1,12 +1,10 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch
 numpy
-openvino>=2023.2.0
+openvino-nightly
 onnx>=1.11.0
-git+https://github.com/huggingface/transformers.git
+transformers>=4.37.0
 git+https://github.com/huggingface/optimum-intel.git
-semantic-kernel==0.4.3.dev0
-sentence-transformers
 scikit-learn
 jupyterlab
 ipywidgets
